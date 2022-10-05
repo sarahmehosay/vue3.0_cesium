@@ -110,70 +110,16 @@ export default {
                           point2 = points.add({
                               position : new Cesium.Cartesian3(cartesian.x, cartesian.y, cartesian.z),
                               color : LINEPOINTCOLOR
-                          }); 
+                          });
                           point1GeoPosition = Cesium.Cartographic.fromCartesian(point1.position);
                           point2GeoPosition = Cesium.Cartographic.fromCartesian(point2.position);
-                          // point3GeoPosition = Cesium.Cartographic.fromCartesian(new Cesium.Cartesian3(point2.position.x, point2.position.y, point1.position.z));  
-                          // initialize position for the polyline
-                          var pl1Positions = [
-                            new Cesium.Cartesian3.fromRadians(point1GeoPosition.longitude, point1GeoPosition.latitude, point1GeoPosition.height),
-                            new Cesium.Cartesian3.fromRadians(point2GeoPosition.longitude, point2GeoPosition.latitude, point2GeoPosition.height)
-                          ];
-                          // var pl2Positions = [
-                          //   new Cesium.Cartesian3.fromRadians(point2GeoPosition.longitude, point2GeoPosition.latitude, point2GeoPosition.height),
-                          //   new Cesium.Cartesian3.fromRadians(point2GeoPosition.longitude, point2GeoPosition.latitude, point1GeoPosition.height)
-                          // ];
-                          // var pl3Positions = [
-                          //   new Cesium.Cartesian3.fromRadians(point1GeoPosition.longitude, point1GeoPosition.latitude, point1GeoPosition.height),
-                          //   new Cesium.Cartesian3.fromRadians(point2GeoPosition.longitude, point2GeoPosition.latitude, point1GeoPosition.height)
-                          // ];
-                          // add polyline from point 1 to point 2
-                          polyline1 = polylines.add({
-                            show : true,
-                            positions : pl1Positions,
-                            width : 1,
-                            material: new Cesium.Material({
-                                fabric : {
-                                    type : 'Color',
-                                    uniforms : {
-                                        color : LINEPOINTCOLOR
-                                    }
-                                }
-                            })
-                          }); 
-                          // polyline2 = polylines.add({
-                          //   show : true,
-                          //   positions : pl2Positions,
-                          //   width : 1,
-                          //   material: new Cesium.Material({
-                          //       fabric : {
-                          //           type : 'PolylineDash',
-                          //           uniforms : {
-                          //               color : LINEPOINTCOLOR,
-                          //           }
-                          //       },
-                          //   })
-                          // });
-                          // polyline3 = polylines.add({
-                          //   show : true,
-                          //   positions : pl3Positions,
-                          //   width : 1,
-                          //   material: new Cesium.Material({
-                          //       fabric : {
-                          //           type : 'PolylineDash',
-                          //           uniforms : {
-                          //               color : LINEPOINTCOLOR,
-                          //           }
-                          //       },
-                          //   })
-                          // }); 
                           var labelZ;
                           if (point2GeoPosition.height >= point1GeoPosition.height) {
                             labelZ = point1GeoPosition.height + (point2GeoPosition.height - point1GeoPosition.height)/2.0;
                           } else {
                             labelZ = point2GeoPosition.height + (point1GeoPosition.height - point2GeoPosition.height)/2.0;
                           };
-                          distanceLabel, horizontalLabel, verticalLabel = vueComponent.addDistanceLabel(point1, point2, labelZ, viewer, point1GeoPosition , point2GeoPosition, ellipsoid, horizontalLabel, distanceLabel, verticalLabel);
+                          distanceLabel, horizontalLabel, verticalLabel = vueComponent.addPolylineWithLabel(point1, point2, labelZ, viewer, point1GeoPosition , point2GeoPosition, ellipsoid, horizontalLabel, distanceLabel, verticalLabel);
                           vueComponent.showButton = true;
                       }
                   }
@@ -182,8 +128,8 @@ export default {
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
     },
 
-    // add distance label from point 1 to point 2
-    addDistanceLabel(point1, point2, height, viewer, point1GeoPosition, point2GeoPosition, ellipsoid, horizontalLabel, distanceLabel, verticalLabel) {
+    // add polyline & distance label from point 1 to point 2
+    addPolylineWithLabel(point1, point2, height, viewer, point1GeoPosition, point2GeoPosition, ellipsoid, horizontalLabel, distanceLabel, verticalLabel) {
       var label = {
         font : '14px monospace',
         showBackground : true,
@@ -199,70 +145,154 @@ export default {
       point1.latitude = parseFloat(Cesium.Math.toDegrees(point1.position.y));
       point2.longitude = parseFloat(Cesium.Math.toDegrees(point2.position.x));
       point2.latitude = parseFloat(Cesium.Math.toDegrees(point2.position.y));
-      this.details.push(point1GeoPosition);
-      this.details.push(point2GeoPosition);
-      label.text = this.getHorizontalDistanceString(point1, point2);
-      console.log(point1GeoPosition);
-      console.log(point2GeoPosition);
-      console.log(point1);
-      this.distance.push(["horizontal distance",label.text])
-      // horizontalLabel = viewer.entities.add({
-      //     position: this.getMidpoint(point1, point2, point1GeoPosition.height),
-      //     label: label
-      // });
-      label.text = this.getDistanceString(point1, point2, point1GeoPosition, point2GeoPosition);
-      this.distance.push(["points distance",label.text])
+      var pointsLongitude = Cesium.Math.lerp(point1.position.x, point1.position.y, 0.5);
+      var pointsLatitude = Cesium.Math.lerp(point2.position.x, point2.position.y, 0.5);
+      console.log(pointsLongitude)
+      // var pointsHeight = Cesium.Math.lerp(polylinePositions[0].height, polylinePositions[1].height, 0.5);
+      var polylinePositions = [
+          new Cesium.Cartographic.fromCartesian(point1.position),
+          new Cesium.Cartographic.fromCartesian(point2.position)
+      ];
+      const promise = viewer.scene.sampleHeightMostDetailed(polylinePositions);
+      promise.then(function(updatedPosition) {
+        polylinePositions = updatedPosition
+          // positions[0].height and positions[1].height have been updated.
+          // updatedPositions is just a reference to positions.
+      });
+      var cartesian1 = new Cesium.Cartesian3.fromRadians(polylinePositions[0].longitude, polylinePositions[0].latitude, polylinePositions[0].height)
+      var cartesian2 = new Cesium.Cartesian3.fromRadians(polylinePositions[1].longitude, polylinePositions[1].latitude, polylinePositions[1].height)
+      console.log(cartesian1)
+      console.log(cartesian2)
+      const count = 30;
+      const cartesians = new Array(count);
+      for (let i = 0; i < count; ++i) {
+        const offset = i / (count - 1);
+        cartesians[i] = Cesium.Cartesian3.lerp(
+          cartesian1,
+          cartesian2,
+          offset,
+          new Cesium.Cartesian3()
+        );
+      }
+      console.log(cartesians);
+      viewer.scene.clampToHeightMostDetailed(cartesians)
+      .then(function (clampedCartesians) {
+        for (let i = 0; i < count; ++i) {
+          viewer.entities.add({
+            position: clampedCartesians[i],
+            ellipsoid: {
+              radii: new Cesium.Cartesian3(0.2, 0.2, 0.2),
+              material: Cesium.Color.RED,
+            },
+          });
+        }
+
+        viewer.entities.add({
+          polyline: {
+            positions: clampedCartesians,
+            arcType: Cesium.ArcType.NONE,
+            width: 2,
+            material: new Cesium.PolylineOutlineMaterialProperty({
+              color: Cesium.Color.YELLOW,
+            }),
+            depthFailMaterial: new Cesium.PolylineOutlineMaterialProperty(
+              {
+                color: Cesium.Color.YELLOW,
+              }
+            ),
+          },
+        });
+      });
+      var pointsLongitude = Cesium.Math.lerp(polylinePositions[0].longitude, polylinePositions[1].longitude, 0.5);
+      var pointsLatitude = Cesium.Math.lerp(polylinePositions[0].latitude, polylinePositions[1].latitude, 0.5);
+      var pointsHeight = Cesium.Math.lerp(polylinePositions[0].height, polylinePositions[1].height, 0.5);
+      this.details.push(polylinePositions[0]);
+      this.details.push(polylinePositions[1]);
+      this.details.push({
+        'longitude': pointsLongitude,
+        'latitude': pointsLatitude,
+        'height': pointsHeight
+      });
+      // this.distance.push(["horizontal distance",this.getHorizontalDistanceString(point1, point2)])
+      label.text = this.getDistanceString(point1, point2, polylinePositions[0], polylinePositions[1]);
+      this.distance.push(["distance",label.text])
       distanceLabel = viewer.entities.add({
           position: this.getMidpoint(point1, point2, height),
           label: label
       });
-      label.text = this.getVerticalDistanceString(point1GeoPosition, point2GeoPosition);
-      this.distance.push(["vetical distance",label.text])
-      // verticalLabel = viewer.entities.add({
-      //     position: this.getMidpoint(point2, point2, height),
-      //     label: label
+
+      // if (!Cesium.Entity.supportsPolylinesOnTerrain(viewer.scene)) {
+      //   window.alert(
+      //     "Polylines on terrain are not supported on this platform"
+      //   );
+      // }
+      // console.log(point1)
+      // console.log(point2)
+      // viewer.entities.add({
+      //   polyline: {
+      //     positions: Cesium.Cartesian3.fromDegreesArray([
+      //       point1.longitude,
+      //       point1.latitude,
+      //       point2.longitude,
+      //       point2.latitude,
+      //     ]),
+      //     clampToGround: true,
+      //     width: 10,
+      //     material: new Cesium.PolylineOutlineMaterialProperty({
+      //       color: Cesium.Color.ORANGE,
+      //       outlineWidth: 2,
+      //       outlineColor: Cesium.Color.BLACK,
+      //     }),
+      //   },
       // });
-      
+      // this.distance.push(["vetical distance",this.getVerticalDistanceString(point1GeoPosition, point2GeoPosition)])
+      // using Cesium.Math.lerp(p, q, time)
+      // var pointsLongitude = Cesium.Math.lerp(polylinePositions[0].longitude, polylinePositions[1].longitude, 0.5);
+      // var pointsLatitude = Cesium.Math.lerp(polylinePositions[0].latitude, polylinePositions[1].latitude, 0.5);
+      // var pointsHeight = Cesium.Math.lerp(polylinePositions[0].height, polylinePositions[1].height, 0.5);
+      // console.log(pointsLongitude);
+      // console.log(pointsLatitude);
+      // console.log(pointsHeight);
       // adding wall from point1 to point2
       var wallPosition = [
-        new Cesium.Cartesian3.fromRadians(point1GeoPosition.longitude, point1GeoPosition.latitude, point1GeoPosition.height),
-        new Cesium.Cartesian3.fromRadians(point2GeoPosition.longitude, point2GeoPosition.latitude, point2GeoPosition.height)
+        new Cesium.Cartesian3.fromRadians(polylinePositions[0].longitude, polylinePositions[0].latitude, polylinePositions[0].height),
+        new Cesium.Cartesian3.fromRadians(polylinePositions[1].longitude, polylinePositions[1].latitude, polylinePositions[1].height)
       ];
+      // var wallPosition = new Cesium.Cartesian3.fromArray(cartesians);
       viewer.entities.add({
         name: "Blue wall at height",
         wall: {
           show: true,
           positions: wallPosition,
           minimumHeights: [20.0, 20.0],
-          material: Cesium.Color.BLUE,
+          material: Cesium.Color.LIGHTGRAY,
         },
       });
-      this.dataSource = viewer;
       return distanceLabel, horizontalLabel, verticalLabel
     },
     // get horizontal distance from point 1 to point 2
-    getHorizontalDistanceString(point1, point2) {
-      this.geodesic.setEndPoints(point1.cartographic, point2.cartographic);
-      var meters = this.geodesic.surfaceDistance.toFixed(2);
-      if (meters >= 1000) {
-          return (meters / 1000).toFixed(1) + ' KM';
-      }
-      return meters + ' M';
-    },
+    // getHorizontalDistanceString(point1, point2) {
+    //   this.geodesic.setEndPoints(point1.cartographic, point2.cartographic);
+    //   var meters = this.geodesic.surfaceDistance.toFixed(2);
+    //   if (meters >= 1000) {
+    //       return (meters / 1000).toFixed(1) + ' KM';
+    //   }
+    //   return meters + ' M';
+    // },
     // get vertical distance from point 1 to point 2
-    getVerticalDistanceString(point1GeoPosition, point2GeoPosition) {
-      var heights = [point1GeoPosition.height, point2GeoPosition.height];
-      var meters = Math.max.apply(Math, heights) - Math.min.apply(Math, heights);
-      if (meters >= 1000) {
-          return (meters / 1000).toFixed(1) + ' KM';
-      }
-      return meters.toFixed(2) + ' M';
-    },
+    // getVerticalDistanceString(point1GeoPosition, point2GeoPosition) {
+    //   var heights = [point1GeoPosition.height, point2GeoPosition.height];
+    //   var meters = Math.max.apply(Math, heights) - Math.min.apply(Math, heights);
+    //   if (meters >= 1000) {
+    //       return (meters / 1000).toFixed(1) + ' KM';
+    //   }
+    //   return meters.toFixed(2) + ' M';
+    // },
     // get actual distance from point 1 to point 2
-    getDistanceString(point1, point2, point1GeoPosition, point2GeoPosition) {
+    getDistanceString(point1, point2, polylinePosition1, polylinePosition2) {
       this.geodesic.setEndPoints(point1.cartographic, point2.cartographic);
       var horizontalMeters = this.geodesic.surfaceDistance.toFixed(2);
-      var heights = [point1GeoPosition.height, point2GeoPosition.height];
+      var heights = [polylinePosition1.height, polylinePosition2.height];
       var verticalMeters = Math.max.apply(Math, heights) - Math.min.apply(Math, heights);
       var meters = Math.pow((Math.pow(horizontalMeters, 2) + Math.pow(verticalMeters, 2)), 0.5);
 
