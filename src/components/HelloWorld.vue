@@ -52,17 +52,21 @@ export default {
           url: Cesium.IonResource.fromAssetId(1),
         }),
       });
+      // set to true to depth-test primitives against the terrain surface
       viewer.scene.globe.depthTestAgainstTerrain = true;
       var camera = viewer.camera;
       var scene = viewer.scene;
+      // Ellipsoid instance initialized to the WGS84 standard
       var ellipsoid = Cesium.Ellipsoid.WGS84;
       var tm_url = Cesium.IonResource.fromAssetId(1340967);
       var tm = new Cesium.Cesium3DTileset({
         url: tm_url,
       })
+      // add tileset to view
       var tileset = scene.primitives.add(tm);
       // remove the logo
       viewer._cesiumWidget._creditContainer.style.display = "none";
+      //  check if tileset is ready to use
       tileset.readyPromise.then(function() {
         var boundingSphere = tileset.boundingSphere;
         camera.viewBoundingSphere(boundingSphere, new Cesium.HeadingPitchRange(0.5, -0.2, boundingSphere.radius * 4.0));
@@ -79,8 +83,6 @@ export default {
       var point1, point2;
       var point1GeoPosition, point2GeoPosition;
       var polylines = scene.primitives.add(new Cesium.PolylineCollection());
-      var polyline1, polyline2, polyline3;
-      var distanceLabel, verticalLabel, horizontalLabel;
       var LINEPOINTCOLOR = Cesium.Color.RED;
       var vueComponent = this;
       // handler for screen action inside the cesium container
@@ -91,11 +93,11 @@ export default {
               if (scene.pickPositionSupported && Cesium.defined(pickedObject)) {
                   var cartesian = viewer.scene.pickPosition(click.position);
                   if (Cesium.defined(cartesian)) {
+                      // remove all points, polylines, entities & values
                       if (points.length === 2) {
                           points.removeAll();
                           polylines.removeAll();
                           viewer.entities.removeAll();
-                          vueComponent.showButton = false;
                           vueComponent.details = [];
                           vueComponent.distance = [];
                       }
@@ -119,8 +121,7 @@ export default {
                           } else {
                             labelZ = point2GeoPosition.height + (point1GeoPosition.height - point2GeoPosition.height)/2.0;
                           };
-                          distanceLabel, horizontalLabel, verticalLabel = vueComponent.addPolylineWithLabel(point1, point2, labelZ, viewer, point1GeoPosition , point2GeoPosition, ellipsoid, horizontalLabel, distanceLabel, verticalLabel);
-                          vueComponent.showButton = true;
+                          vueComponent.addEntitiesAndLabel(point1, point2, labelZ, viewer, ellipsoid);
                       }
                   }
               }
@@ -128,8 +129,9 @@ export default {
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
     },
 
-    // add polyline & distance label from point 1 to point 2
-    addPolylineWithLabel(point1, point2, height, viewer, point1GeoPosition, point2GeoPosition, ellipsoid, horizontalLabel, distanceLabel, verticalLabel) {
+    // add entities & distance label from point 1 to point 2
+    async addEntitiesAndLabel(point1, point2, height, viewer, ellipsoid) {
+      // initialize label variable
       var label = {
         font : '14px monospace',
         showBackground : true,
@@ -145,38 +147,46 @@ export default {
       point1.latitude = parseFloat(Cesium.Math.toDegrees(point1.position.y));
       point2.longitude = parseFloat(Cesium.Math.toDegrees(point2.position.x));
       point2.latitude = parseFloat(Cesium.Math.toDegrees(point2.position.y));
-      var pointsLongitude = Cesium.Math.lerp(point1.position.x, point1.position.y, 0.5);
-      var pointsLatitude = Cesium.Math.lerp(point2.position.x, point2.position.y, 0.5);
-      console.log(pointsLongitude)
-      // var pointsHeight = Cesium.Math.lerp(polylinePositions[0].height, polylinePositions[1].height, 0.5);
+      // cartographic position for point 1 & point 2
       var polylinePositions = [
           new Cesium.Cartographic.fromCartesian(point1.position),
           new Cesium.Cartographic.fromCartesian(point2.position)
       ];
-      const promise = viewer.scene.sampleHeightMostDetailed(polylinePositions);
+      // initiates asynchronous query for an array of Cartographic positions
+      var promise = viewer.scene.sampleHeightMostDetailed(polylinePositions);
       promise.then(function(updatedPosition) {
         polylinePositions = updatedPosition
-          // positions[0].height and positions[1].height have been updated.
-          // updatedPositions is just a reference to positions.
       });
+      // add text to label variable for distance value in km/m
+      label.text = this.getDistanceString(point1, point2, polylinePositions[0], polylinePositions[1]);
+      // push distance value to distance variable for csv export
+      this.distance.push(["distance",label.text])
+      // convert radian values of points to 3D(three-dimensional) cartesian points(coordinates); 
       var cartesian1 = new Cesium.Cartesian3.fromRadians(polylinePositions[0].longitude, polylinePositions[0].latitude, polylinePositions[0].height)
       var cartesian2 = new Cesium.Cartesian3.fromRadians(polylinePositions[1].longitude, polylinePositions[1].latitude, polylinePositions[1].height)
-      console.log(cartesian1)
-      console.log(cartesian2)
+      // get 3D cartesian coordinates based on the 2 points given
       const count = 30;
+      var coordinateList = [];
+      var vueComponent = this;
       const cartesians = new Array(count);
       for (let i = 0; i < count; ++i) {
         const offset = i / (count - 1);
+        // computes the linear interpolation or extrapolation at t using the provided cartesians.
         cartesians[i] = Cesium.Cartesian3.lerp(
           cartesian1,
           cartesian2,
           offset,
           new Cesium.Cartesian3()
         );
+        coordinateList.push(Cesium.Cartographic.fromCartesian(cartesians[i]))
       }
-      console.log(cartesians);
+      // clamp polyline based on clamped cartesian values
       viewer.scene.clampToHeightMostDetailed(cartesians)
       .then(function (clampedCartesians) {
+        viewer.entities.add({
+            position: vueComponent.getMidpoint(point1, point2, height),
+            label: label
+        });
         for (let i = 0; i < count; ++i) {
           viewer.entities.add({
             position: clampedCartesians[i],
@@ -186,7 +196,7 @@ export default {
             },
           });
         }
-
+        
         viewer.entities.add({
           polyline: {
             positions: clampedCartesians,
@@ -203,91 +213,42 @@ export default {
           },
         });
       });
-      var pointsLongitude = Cesium.Math.lerp(polylinePositions[0].longitude, polylinePositions[1].longitude, 0.5);
-      var pointsLatitude = Cesium.Math.lerp(polylinePositions[0].latitude, polylinePositions[1].latitude, 0.5);
-      var pointsHeight = Cesium.Math.lerp(polylinePositions[0].height, polylinePositions[1].height, 0.5);
-      this.details.push(polylinePositions[0]);
-      this.details.push(polylinePositions[1]);
-      this.details.push({
-        'longitude': pointsLongitude,
-        'latitude': pointsLatitude,
-        'height': pointsHeight
-      });
-      // this.distance.push(["horizontal distance",this.getHorizontalDistanceString(point1, point2)])
-      label.text = this.getDistanceString(point1, point2, polylinePositions[0], polylinePositions[1]);
-      this.distance.push(["distance",label.text])
-      distanceLabel = viewer.entities.add({
-          position: this.getMidpoint(point1, point2, height),
-          label: label
-      });
 
-      // if (!Cesium.Entity.supportsPolylinesOnTerrain(viewer.scene)) {
-      //   window.alert(
-      //     "Polylines on terrain are not supported on this platform"
-      //   );
-      // }
-      // console.log(point1)
-      // console.log(point2)
-      // viewer.entities.add({
-      //   polyline: {
-      //     positions: Cesium.Cartesian3.fromDegreesArray([
-      //       point1.longitude,
-      //       point1.latitude,
-      //       point2.longitude,
-      //       point2.latitude,
-      //     ]),
-      //     clampToGround: true,
-      //     width: 10,
-      //     material: new Cesium.PolylineOutlineMaterialProperty({
-      //       color: Cesium.Color.ORANGE,
-      //       outlineWidth: 2,
-      //       outlineColor: Cesium.Color.BLACK,
-      //     }),
-      //   },
-      // });
-      // this.distance.push(["vetical distance",this.getVerticalDistanceString(point1GeoPosition, point2GeoPosition)])
-      // using Cesium.Math.lerp(p, q, time)
       // var pointsLongitude = Cesium.Math.lerp(polylinePositions[0].longitude, polylinePositions[1].longitude, 0.5);
       // var pointsLatitude = Cesium.Math.lerp(polylinePositions[0].latitude, polylinePositions[1].latitude, 0.5);
       // var pointsHeight = Cesium.Math.lerp(polylinePositions[0].height, polylinePositions[1].height, 0.5);
-      // console.log(pointsLongitude);
-      // console.log(pointsLatitude);
-      // console.log(pointsHeight);
-      // adding wall from point1 to point2
+      this.details.push(polylinePositions[0]);
+      this.details.push(polylinePositions[1]);
+      // initiates asynchronous query for additional cartographic positions based on multiple 3D cartesian points
+      viewer.scene.sampleHeightMostDetailed(coordinateList)
+      .then(function(updatedCoordinateList) {
+          coordinateList = updatedCoordinateList
+          updatedCoordinateList.forEach(element => {
+            vueComponent.details.push(element);
+          });
+      });
+      // get height with the highest value between 2 points for the wall height
+      var wallHeight = null
+      if(polylinePositions[0].height > polylinePositions[1].height) {
+        wallHeight = polylinePositions[0].height
+      } else {
+        wallHeight = polylinePositions[1].height
+      }
+      // set wall position based on radian values
       var wallPosition = [
-        new Cesium.Cartesian3.fromRadians(polylinePositions[0].longitude, polylinePositions[0].latitude, polylinePositions[0].height),
-        new Cesium.Cartesian3.fromRadians(polylinePositions[1].longitude, polylinePositions[1].latitude, polylinePositions[1].height)
+        new Cesium.Cartesian3.fromRadians(polylinePositions[0].longitude, polylinePositions[0].latitude, wallHeight),
+        new Cesium.Cartesian3.fromRadians(polylinePositions[1].longitude, polylinePositions[1].latitude, wallHeight)
       ];
-      // var wallPosition = new Cesium.Cartesian3.fromArray(cartesians);
+      // add wall entity to view between 2 points
       viewer.entities.add({
         name: "Blue wall at height",
         wall: {
           show: true,
           positions: wallPosition,
-          minimumHeights: [20.0, 20.0],
           material: Cesium.Color.LIGHTGRAY,
         },
       });
-      return distanceLabel, horizontalLabel, verticalLabel
     },
-    // get horizontal distance from point 1 to point 2
-    // getHorizontalDistanceString(point1, point2) {
-    //   this.geodesic.setEndPoints(point1.cartographic, point2.cartographic);
-    //   var meters = this.geodesic.surfaceDistance.toFixed(2);
-    //   if (meters >= 1000) {
-    //       return (meters / 1000).toFixed(1) + ' KM';
-    //   }
-    //   return meters + ' M';
-    // },
-    // get vertical distance from point 1 to point 2
-    // getVerticalDistanceString(point1GeoPosition, point2GeoPosition) {
-    //   var heights = [point1GeoPosition.height, point2GeoPosition.height];
-    //   var meters = Math.max.apply(Math, heights) - Math.min.apply(Math, heights);
-    //   if (meters >= 1000) {
-    //       return (meters / 1000).toFixed(1) + ' KM';
-    //   }
-    //   return meters.toFixed(2) + ' M';
-    // },
     // get actual distance from point 1 to point 2
     getDistanceString(point1, point2, polylinePosition1, polylinePosition2) {
       this.geodesic.setEndPoints(point1.cartographic, point2.cartographic);
@@ -318,7 +279,7 @@ export default {
             "longitude",
             "height"
           ],
-          ...this.details.map(item => [
+          ...this.details.map((item,i) => [
             "",
             item.latitude,
             item.longitude,
@@ -328,7 +289,6 @@ export default {
         .map(e => e.join(",")) 
         .join("\n");
         csvString = csvString+ "\n" + this.distance.map(e => e.join(",")).join("\n");
-        console.log(csvString)
         var blob = new Blob([csvString], { type: 'application/vnd.ms-excel' });
         const url = window.URL.createObjectURL(blob);
         var link = document.createElement('a');
